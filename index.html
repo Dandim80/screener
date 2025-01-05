@@ -32,11 +32,6 @@
     </div>
 
     <div>
-        <label for="volumeMultiplier">Moltiplicatore Volume (media): </label>
-        <input type="number" id="volumeMultiplier" value="2">
-    </div>
-
-    <div>
         <label for="timeframe">Seleziona il Timeframe: </label>
         <select id="timeframe">
             <option value="1m">1 minuto</option>
@@ -53,8 +48,9 @@
         <thead>
             <tr>
                 <th>Simbolo</th>
-                <th>Volume</th>
                 <th>Condizione</th>
+                <th>Prezzo al momento</th>
+                <th>Orario della condizione</th>
                 <th>EMA (Ultima)</th>
             </tr>
         </thead>
@@ -67,7 +63,6 @@
         let symbols = [];  // Iniziamo con un array vuoto per caricare i simboli dinamicamente
         let timeframe = '1h';  // Timeframe impostabile (di default 1 ora)
         let emaPeriod = 14;  // Periodo EMA (di default 14)
-        let volumeMultiplier = 2;  // Moltiplicatore per il volume (di default 2)
         let lastUpdateTime = null;  // Variabile per tracciare l'ora dell'ultimo aggiornamento
         let updateInterval = null;  // Intervallo di aggiornamento
 
@@ -97,12 +92,6 @@
             return ema;
         }
 
-        // Funzione per calcolare la media dei volumi
-        function calculateAverageVolume(volumes) {
-            const totalVolume = volumes.reduce((acc, volume) => acc + volume, 0);
-            return totalVolume / volumes.length;
-        }
-
         // Funzione per visualizzare i risultati in tabella
         function displayResults(results) {
             const tableBody = document.getElementById('resultsTable').getElementsByTagName('tbody')[0];
@@ -111,16 +100,16 @@
             results.forEach(result => {
                 const row = tableBody.insertRow();
                 row.insertCell(0).innerText = result.symbol;
-                row.insertCell(1).innerText = result.volume;
-                row.insertCell(2).innerText = result.condition;
-                row.insertCell(3).innerText = result.ema;
+                row.insertCell(1).innerText = result.condition;
+                row.insertCell(2).innerText = result.price;
+                row.insertCell(3).innerText = result.time;
+                row.insertCell(4).innerText = result.ema;
             });
         }
 
         // Funzione principale che raccoglie e analizza i dati
         async function analyzeMarket() {
             emaPeriod = parseInt(document.getElementById('emaPeriod').value);  // Ottieni il periodo EMA dall'input
-            volumeMultiplier = parseFloat(document.getElementById('volumeMultiplier').value);  // Ottieni il moltiplicatore del volume
             timeframe = document.getElementById('timeframe').value;  // Ottieni il timeframe selezionato
 
             const symbolsData = await fetchSymbols();
@@ -130,31 +119,29 @@
             for (let symbol of symbolsData) {
                 const klines = await fetchKlines(symbol.symbol, timeframe, emaPeriod + 1);
                 const closingPrices = klines.map(kline => parseFloat(kline[4]));  // Prezzo di chiusura
-                const volumes = klines.map(kline => parseFloat(kline[5]));  // Volume
-                const volume = volumes[volumes.length - 1];  // Ultimo volume tradato
-                
+                const times = klines.map(kline => new Date(kline[0]).toLocaleString());  // Orario delle candele
                 const ema = calculateEMA(closingPrices, emaPeriod);
                 const lastPrice = closingPrices[closingPrices.length - 1];
                 const lastEma = ema[ema.length - 1];
+                const lastTime = times[times.length - 1];  // Ultimo orario della candela
 
-                // Calcoliamo la media dei volumi
-                const averageVolume = calculateAverageVolume(volumes);
-                
                 let condition = "";
-                if (lastPrice > lastEma && volume > averageVolume * volumeMultiplier) {
+                if (lastPrice > lastEma) {
                     condition = "Crossover";
                     results.push({
                         symbol: symbol.symbol,
-                        volume: volume,
                         condition: condition,
+                        price: lastPrice.toFixed(2),
+                        time: lastTime,
                         ema: lastEma.toFixed(2)
                     });
-                } else if (lastPrice < lastEma && volume > averageVolume * volumeMultiplier) {
+                } else if (lastPrice < lastEma) {
                     condition = "Crossunder";
                     results.push({
                         symbol: symbol.symbol,
-                        volume: volume,
                         condition: condition,
+                        price: lastPrice.toFixed(2),
+                        time: lastTime,
                         ema: lastEma.toFixed(2)
                     });
                 }
@@ -201,4 +188,8 @@
         });
 
         // Inizia l'analisi iniziale e avvia l'aggiornamento periodico
-        startTimedUpdate
+        startTimedUpdate();
+        analyzeMarket();  // Esegui subito l'analisi iniziale
+    </script>
+</body>
+</html>
