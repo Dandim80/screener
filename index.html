@@ -1,111 +1,204 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Web Worker EMA Crossover</title>
-  <style>
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-    th, td {
-      padding: 8px;
-      text-align: left;
-      border: 1px solid #ddd;
-    }
-    th {
-      background-color: #f2f2f2;
-    }
-    button {
-      padding: 10px;
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoraggio delle Coppie con Crossover/Crossunder EMA</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
 </head>
 <body>
+    <h1>Monitoraggio delle Coppie con Crossover/Crossunder EMA</h1>
 
-  <h1>Monitoraggio EMA Crossover e Crossunder</h1>
+    <!-- Aggiungi i campi di input per personalizzare l'EMA -->
+    <div>
+        <label for="emaPeriod">Periodo EMA (Crossover/Crossunder): </label>
+        <input type="number" id="emaPeriod" value="14">
+    </div>
 
-  <label for="emaPeriod">Periodo EMA: </label>
-  <input type="number" id="emaPeriod" value="14" min="1" step="1" />
-  <br><br>
-
-  <label for="timeframe">Seleziona Timeframe (in minuti): </label>
-  <select id="timeframe">
-    <option value="1">1 Minuto</option>
-    <option value="5">5 Minuti</option>
-    <option value="15">15 Minuti</option>
-    <option value="30">30 Minuti</option>
-    <option value="60">1 Ora</option>
-  </select>
-
-  <button id="startBtn">Avvia Monitoraggio</button>
-
-  <table id="resultTable">
-    <thead>
-      <tr>
-        <th>Simbolo</th>
-        <th>Condizione</th>
-        <th>Prezzo</th>
-        <th>Orario</th>
-      </tr>
-    </thead>
-    <tbody>
-    </tbody>
-  </table>
-
-  <script>
-    // Creazione del Web Worker
-    const worker = new Worker('worker.js');
+    <div>
+        <label for="timeframe">Seleziona il Timeframe: </label>
+        <select id="timeframe">
+            <option value="1m">1 minuto</option>
+            <option value="5m">5 minuti</option>
+            <option value="15m">15 minuti</option>
+            <option value="1h">1 ora</option>
+            <option value="4h">4 ore</option>
+            <option value="1d">1 giorno</option>
+        </select>
+    </div>
     
-    // Funzione per inviare i dati al worker
-    function startMonitoring() {
-      const emaPeriod = document.getElementById('emaPeriod').value;
-      const timeframe = document.getElementById('timeframe').value;
-      
-      worker.postMessage({
-        emaPeriod: parseInt(emaPeriod),
-        timeframe: parseInt(timeframe)
-      });
-    }
+    <!-- Tabella per visualizzare i risultati -->
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>Simbolo</th>
+                <th>Condizione</th>
+                <th>Prezzo al momento</th>
+                <th>Orario della condizione</th>
+                <th>EMA (Ultima)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- I risultati verranno aggiunti qui -->
+        </tbody>
+    </table>
 
-    // Aggiungi il listener per il pulsante
-    document.getElementById('startBtn').addEventListener('click', startMonitoring);
+    <script>
+        let symbols = [];  // Iniziamo con un array vuoto per caricare i simboli dinamicamente
+        let timeframe = '1h';  // Timeframe impostabile (di default 1 ora)
+        let emaPeriod = 14;  // Periodo EMA (di default 14)
+        let lastUpdateTime = null;  // Variabile per tracciare l'ora dell'ultimo aggiornamento
+        let updateInterval = null;  // Intervallo di aggiornamento
+        let worker;
 
-    // Ascolta i messaggi dal Web Worker
-    worker.onmessage = function(event) {
-      const data = event.data;
-      const tableBody = document.querySelector('#resultTable tbody');
-      
-      // Pulisce la tabella
-      tableBody.innerHTML = '';
+        // Funzione per recuperare i simboli di mercato spot con USDT
+        async function fetchSymbols() {
+            const response = await axios.get('https://api.binance.com/api/v3/exchangeInfo');
+            const symbolsData = response.data.symbols;
+            
+            // Filtro per trovare solo i simboli che sono spot e hanno la coppia USDT
+            return symbolsData.filter(symbol => symbol.symbol.endsWith('USDT') && symbol.status === 'TRADING');
+        }
 
-      // Aggiungi nuove righe alla tabella
-      data.results.forEach(result => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${result.symbol}</td>
-          <td>${result.condition}</td>
-          <td>${result.price}</td>
-          <td>${result.timestamp}</td>
-        `;
-        tableBody.appendChild(row);
-      });
-    };
+        // Funzione per recuperare le candele (klines) da Binance
+        async function fetchKlines(symbol, timeframe, limit) {
+            const url = `https://api.binance.com/api/v1/klines?symbol=${symbol}&interval=${timeframe}&limit=${limit}`;
+            const response = await axios.get(url);
+            return response.data;
+        }
 
-    // Error handling per il worker
-    worker.onerror = function(error) {
-      console.error('Errore nel Worker:', error);
-    };
-  </script>
+        // Funzione per calcolare l'EMA
+        function calculateEMA(prices, period) {
+            let k = 2 / (period + 1);
+            let ema = [prices[0]];  // Primo valore è la stessa apertura
+            for (let i = 1; i < prices.length; i++) {
+                ema.push(prices[i] * k + ema[i - 1] * (1 - k));
+            }
+            return ema;
+        }
 
+        // Funzione per visualizzare i risultati in tabella
+        function displayResults(results) {
+            const tableBody = document.getElementById('resultsTable').getElementsByTagName('tbody')[0];
+            tableBody.innerHTML = "";  // Resetta la tabella prima di aggiungere i nuovi dati
+
+            results.forEach(result => {
+                const row = tableBody.insertRow();
+                row.insertCell(0).innerText = result.symbol;
+                row.insertCell(1).innerText = result.condition;
+                row.insertCell(2).innerText = result.price;
+                row.insertCell(3).innerText = result.time;
+                row.insertCell(4).innerText = result.ema;
+            });
+        }
+
+        // Funzione principale che raccoglie e analizza i dati
+        async function analyzeMarket() {
+            emaPeriod = parseInt(document.getElementById('emaPeriod').value);  // Ottieni il periodo EMA dall'input
+            timeframe = document.getElementById('timeframe').value;  // Ottieni il timeframe selezionato
+
+            const symbolsData = await fetchSymbols();
+            const results = [];
+
+            // Per ogni simbolo, recuperiamo le candele, calcoliamo l'EMA e verifichiamo la condizione
+            for (let symbol of symbolsData) {
+                const klines = await fetchKlines(symbol.symbol, timeframe, emaPeriod + 1);
+                const closingPrices = klines.map(kline => parseFloat(kline[4]));  // Prezzo di chiusura
+                const times = klines.map(kline => new Date(kline[0]).toLocaleString());  // Orario delle candele
+                const ema = calculateEMA(closingPrices, emaPeriod);
+                const lastPrice = closingPrices[closingPrices.length - 1];
+                const lastEma = ema[ema.length - 1];
+                const lastTime = times[times.length - 1];  // Ultimo orario della candela
+
+                let condition = "";
+                if (lastPrice > lastEma && closingPrices[closingPrices.length - 2] <= ema[ema.length - 2]) {
+                    condition = "Crossover";
+                    results.push({
+                        symbol: symbol.symbol,
+                        condition: condition,
+                        price: lastPrice.toFixed(2),
+                        time: lastTime,
+                        ema: lastEma.toFixed(2)
+                    });
+                } else if (lastPrice < lastEma && closingPrices[closingPrices.length - 2] >= ema[ema.length - 2]) {
+                    condition = "Crossunder";
+                    results.push({
+                        symbol: symbol.symbol,
+                        condition: condition,
+                        price: lastPrice.toFixed(2),
+                        time: lastTime,
+                        ema: lastEma.toFixed(2)
+                    });
+                }
+            }
+
+            // Visualizza i risultati, mostrando solo quelli che soddisfano la condizione
+            displayResults(results);
+        }
+
+        // Funzione per avviare l'analisi alla scadenza del timeframe selezionato
+        function startTimedUpdate() {
+            const intervalInMillis = getTimeframeInMillis(timeframe);
+            if (updateInterval) {
+                clearInterval(updateInterval);  // Ferma l'intervallo precedente
+            }
+
+            updateInterval = setInterval(() => {
+                analyzeMarket();  // Aggiorna i dati ogni scadenza del timeframe
+            }, intervalInMillis);
+        }
+
+        // Funzione per ottenere il tempo in millisecondi per il timeframe selezionato
+        function getTimeframeInMillis(timeframe) {
+            const timeframes = {
+                '1m': 60000,   // 1 minuto
+                '5m': 300000,  // 5 minuti
+                '15m': 900000, // 15 minuti
+                '1h': 3600000, // 1 ora
+                '4h': 14400000, // 4 ore
+                '1d': 86400000, // 1 giorno
+            };
+            return timeframes[timeframe] || 3600000;  // Default a 1 ora se il timeframe non è valido
+        }
+
+        // Inizializzazione del Web Worker
+        function initWorker() {
+            if (typeof Worker !== "undefined") {
+                worker = new Worker("worker.js"); // Carica il file worker.js
+                worker.onmessage = function(e) {
+                    console.log("Messaggio ricevuto dal Worker: ", e.data);
+                    // Gestire i dati ricevuti dal worker e aggiornare la UI
+                    displayResults(e.data.results);
+                };
+            } else {
+                alert("I Web Workers non sono supportati nel tuo browser.");
+            }
+        }
+
+        // Avvio del processo di monitoraggio
+        window.onload = async () => {
+            // Recupera i simboli iniziali e avvia l'analisi
+            await fetchSymbols(); 
+            analyzeMarket();  // Avvia la prima analisi dei dati
+            startTimedUpdate();  // Avvia l'aggiornamento periodico delle condizioni
+            initWorker();  // Inizializza il Web Worker
+        };
+    </script>
 </body>
 </html>
