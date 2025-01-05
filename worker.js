@@ -1,72 +1,59 @@
-// Simulazione di dati per l'esempio (questo potrebbe essere integrato con chiamate API per ottenere dati reali)
-const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT']; // Simboli da monitorare
+// worker.js
 
-function calculateEMA(prices, period) {
-  let k = 2 / (period + 1);
-  let ema = [prices[0]];
+onmessage = async function(e) {
+    const { symbolsData, timeframe, emaPeriod } = e.data;
 
-  for (let i = 1; i < prices.length; i++) {
-    ema.push(prices[i] * k + ema[i - 1] * (1 - k));
-  }
-
-  return ema;
-}
-
-// Funzione per monitorare i crossover e crossunder
-function monitorEMA(candles, emaPeriod) {
-  const results = [];
-
-  // Calcola EMA per ogni simbolo
-  symbols.forEach(symbol => {
-    const prices = candles[symbol].map(candle => candle.close);
-    const ema = calculateEMA(prices, emaPeriod);
-
-    // Controlla i crossover e crossunder
-    for (let i = 1; i < ema.length; i++) {
-      let condition = '';
-      if (prices[i] > ema[i] && prices[i - 1] <= ema[i - 1]) {
-        condition = 'Crossover EMA';
-      } else if (prices[i] < ema[i] && prices[i - 1] >= ema[i - 1]) {
-        condition = 'Crossunder EMA';
-      }
-
-      if (condition) {
-        results.push({
-          symbol: symbol,
-          condition: condition,
-          price: prices[i],
-          timestamp: new Date().toLocaleString()
-        });
-      }
+    // Funzione per recuperare le candele (klines) da Binance
+    async function fetchKlines(symbol, timeframe, limit) {
+        const url = `https://api.binance.com/api/v1/klines?symbol=${symbol}&interval=${timeframe}&limit=${limit}`;
+        const response = await fetch(url);
+        return await response.json();
     }
-  });
 
-  return results;
-}
+    // Funzione per calcolare l'EMA
+    function calculateEMA(prices, period) {
+        let k = 2 / (period + 1);
+        let ema = [prices[0]];  // Primo valore è la stessa apertura
+        for (let i = 1; i < prices.length; i++) {
+            ema.push(prices[i] * k + ema[i - 1] * (1 - k));
+        }
+        return ema;
+    }
 
-// Funzione per simulare l'arrivo dei dati (può essere sostituita con API reali)
-function getCandles(symbol, timeframe) {
-  const candles = {};
-  
-  symbols.forEach(symbol => {
-    // Simula delle candele per ogni simbolo
-    candles[symbol] = Array.from({ length: 20 }, (_, i) => ({
-      close: Math.random() * 10000 + 2000 // Prezzi casuali per l'esempio
-    }));
-  });
-  
-  return candles;
-}
+    // Analisi dei dati per ogni simbolo
+    const results = [];
 
-onmessage = function(event) {
-  const { emaPeriod, timeframe } = event.data;
+    for (let symbol of symbolsData) {
+        const klines = await fetchKlines(symbol.symbol, timeframe, emaPeriod + 1);
+        const closingPrices = klines.map(kline => parseFloat(kline[4]));  // Prezzo di chiusura
+        const times = klines.map(kline => new Date(kline[0]).toLocaleString());  // Orario delle candele
+        const ema = calculateEMA(closingPrices, emaPeriod);
+        const lastPrice = closingPrices[closingPrices.length - 1];
+        const lastEma = ema[ema.length - 1];
+        const lastTime = times[times.length - 1];  // Ultimo orario della candela
 
-  // Simula i dati delle candele (sostituire con una chiamata API reale)
-  const candles = getCandles(symbols, timeframe);
+        let condition = "";
+        if (lastPrice > lastEma && closingPrices[closingPrices.length - 2] <= ema[ema.length - 2]) {
+            condition = "Crossover";
+            results.push({
+                symbol: symbol.symbol,
+                condition: condition,
+                price: lastPrice.toFixed(2),
+                time: lastTime,
+                ema: lastEma.toFixed(2)
+            });
+        } else if (lastPrice < lastEma && closingPrices[closingPrices.length - 2] >= ema[ema.length - 2]) {
+            condition = "Crossunder";
+            results.push({
+                symbol: symbol.symbol,
+                condition: condition,
+                price: lastPrice.toFixed(2),
+                time: lastTime,
+                ema: lastEma.toFixed(2)
+            });
+        }
+    }
 
-  // Esegui il monitoraggio delle condizioni EMA
-  const results = monitorEMA(candles, emaPeriod);
-
-  // Invia i risultati al thread principale
-  postMessage({ results });
+    // Invia i risultati al thread principale
+    postMessage(results);
 };
