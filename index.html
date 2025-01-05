@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Spot Market Screener for USDT Pairs</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <h1>Binance Spot Market Screener for USDT Pairs</h1>
+    
+    <div>
+        <label for="emaPeriod">EMA Period:</label>
+        <input type="number" id="emaPeriod" value="20">
+        <br>
+        <label for="mode">Mode:</label>
+        <select id="mode">
+            <option value="crossover">Crossover</option>
+            <option value="crossunder">Crossunder</option>
+        </select>
+        <br>
+        <label for="timeframe">Timeframe:</label>
+        <select id="timeframe">
+            <option value="1m">1 minute</option>
+            <option value="5m">5 minutes</option>
+            <option value="15m">15 minutes</option>
+            <option value="1h">1 hour</option>
+            <option value="1d">1 day</option>
+        </select>
+        <br>
+        <button onclick="updateConfig()">Update Config</button>
+    </div>
+
+    <canvas id="tradeChart" width="800" height="400"></canvas>
+
+    <script>
+        const SYMBOLS_API_URL = "https://api.binance.com/api/v3/exchangeInfo";
+        const KLINES_API_URL = "https://api.binance.com/api/v3/klines";
+        let symbols = [];
+        let emaPeriod = 20;
+        let mode = "crossover";
+        let timeframe = "1m";
+
+        let chartData = {
+            labels: [],
+            datasets: [{
+                label: 'Trade Value',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1,
+                data: []
+            }]
+        };
+
+        const ctx = document.getElementById('tradeChart').getContext('2d');
+        const tradeChart = new Chart(ctx, {
+            type: 'line',
+            data: chartData,
+            options: {
+                scales: {
+                    x: { title: { display: true, text: 'Symbol' } },
+                    y: { title: { display: true, text: 'Trade Value (USDT)' } }
+                }
+            }
+        });
+
+        async function fetchSymbols() {
+            try {
+                const response = await axios.get(SYMBOLS_API_URL);
+                const allSymbols = response.data.symbols;
+                return allSymbols.filter(symbol => symbol.symbol.endsWith('USDT') && symbol.status === 'TRADING');
+            } catch (error) {
+                console.error("Error fetching symbols:", error);
+                return [];
+            }
+        }
+
+        async function fetchKlines(symbol, interval, limit) {
+            try {
+                const response = await axios.get(`${KLINES_API_URL}?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+                return response.data;
+            } catch (error) {
+                console.error(`Error fetching klines for ${symbol}:`, error);
+                return [];
+            }
+        }
+
+        function calculateEMA(data, period) {
+            const k = 2 / (period + 1);
+            let ema = [data[0]];
+            for (let i = 1; i < data.length; i++) {
+                ema.push(data[i] * k + ema[i - 1] * (1 - k));
+            }
+            return ema;
+        }
+
+        async function monitorMarkets() {
+            chartData.labels = [];
+            chartData.datasets[0].data = [];
+            for (const symbol of symbols) {
+                const klines = await fetchKlines(symbol.symbol, timeframe, emaPeriod + 1);
+                const closingPrices = klines.map(k => parseFloat(k[4]));
+                const ema = calculateEMA(closingPrices, emaPeriod);
+
+                if ((mode === "crossover" && closingPrices[ema.length] > ema[ema.length - 1]) ||
+                    (mode === "crossunder" && closingPrices[ema.length] < ema[ema.length - 1])) {
+                    chartData.labels.push(symbol.symbol);
+                    chartData.datasets[0].data.push(closingPrices[ema.length]);
+                }
+            }
+            tradeChart.update();
+        }
+
+        async function updateConfig() {
+            emaPeriod = parseInt(document.getElementById('emaPeriod').value);
+            mode = document.getElementById('mode').value;
+            timeframe = document.getElementById('timeframe').value;
+            symbols = await fetchSymbols();
+            monitorMarkets();
+        }
+
+        updateConfig(); // Initial load
+        setInterval(monitorMarkets, 10000); // Esegui ogni 10 secondi
+    </script>
+</body>
+</html>
