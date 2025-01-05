@@ -1,138 +1,179 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Binance Spot Market Screener for USDT Pairs</title>
+    <title>Monitoraggio Crossovers EMA</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
 </head>
 <body>
-    <h1>Binance Spot Market Screener for USDT Pairs</h1>
-    
+    <h1>Monitoraggio delle Coppie con Crossover/Crossunder EMA</h1>
+
+    <!-- Aggiungi i campi di input per personalizzare l'EMA -->
     <div>
-        <label for="emaPeriod">EMA Period:</label>
-        <input type="number" id="emaPeriod" value="20">
-        <br>
-        <label for="mode">Mode:</label>
-        <select id="mode">
-            <option value="crossover">Crossover</option>
-            <option value="crossunder">Crossunder</option>
-        </select>
-        <br>
-        <label for="timeframe">Timeframe:</label>
-        <select id="timeframe">
-            <option value="1m">1 minute</option>
-            <option value="5m">5 minutes</option>
-            <option value="15m">15 minutes</option>
-            <option value="1h">1 hour</option>
-            <option value="1d">1 day</option>
-        </select>
-        <br>
-        <button onclick="updateConfig()">Update Config</button>
+        <label for="emaPeriod">Periodo EMA (Crossover/Crossunder): </label>
+        <input type="number" id="emaPeriod" value="14">
     </div>
 
-    <canvas id="tradeChart" width="800" height="400"></canvas>
+    <div>
+        <label for="volumeMultiplier">Moltiplicatore Volume (media): </label>
+        <input type="number" id="volumeMultiplier" value="2">
+    </div>
+
+    <div>
+        <label for="timeframe">Seleziona il Timeframe: </label>
+        <select id="timeframe">
+            <option value="1m">1 minuto</option>
+            <option value="5m">5 minuti</option>
+            <option value="15m">15 minuti</option>
+            <option value="1h">1 ora</option>
+            <option value="4h">4 ore</option>
+            <option value="1d">1 giorno</option>
+        </select>
+    </div>
+    
+    <!-- Tabella per visualizzare i risultati -->
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>Simbolo</th>
+                <th>Volume</th>
+                <th>Condizione</th>
+                <th>EMA (Ultima)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- I risultati verranno aggiunti qui -->
+        </tbody>
+    </table>
 
     <script>
-        const SYMBOLS_API_URL = "https://api.binance.com/api/v3/exchangeInfo";
-        const KLINES_API_URL = "https://api.binance.com/api/v3/klines";
-        let symbols = [];
-        let emaPeriod = 20;
-        let mode = "crossover";
-        let timeframe = "1m";
-
-        let chartData = {
-            labels: [],
-            datasets: [{
-                label: 'Trade Value',
-                borderColor: 'rgba(75, 192, 192, 1)',
-                borderWidth: 1,
-                data: []
-            }]
-        };
-
-        const ctx = document.getElementById('tradeChart').getContext('2d');
-        const tradeChart = new Chart(ctx, {
-            type: 'line',
-            data: chartData,
-            options: {
-                scales: {
-                    x: { title: { display: true, text: 'Symbol' } },
-                    y: { title: { display: true, text: 'Trade Value (USDT)' } }
-                }
-            }
-        });
-
+        let symbols = [];  // Iniziamo con un array vuoto per caricare i simboli dinamicamente
+        let timeframe = '1h';  // Timeframe impostabile (di default 1 ora)
+        let emaPeriod = 14;  // Periodo EMA (di default 14)
+        let volumeMultiplier = 2;  // Moltiplicatore per il volume (di default 2)
+        
+        // Funzione per recuperare i simboli di mercato spot con USDT
         async function fetchSymbols() {
-            try {
-                const response = await axios.get(SYMBOLS_API_URL);
-                const allSymbols = response.data.symbols;
-                return allSymbols.filter(symbol => symbol.symbol.endsWith('USDT') && symbol.status === 'TRADING');
-            } catch (error) {
-                console.error("Error fetching symbols:", error);
-                return [];
-            }
+            const response = await axios.get('https://api.binance.com/api/v3/exchangeInfo');
+            const symbolsData = response.data.symbols;
+            
+            // Filtro per trovare solo i simboli che sono spot e hanno la coppia USDT
+            return symbolsData.filter(symbol => symbol.symbol.endsWith('USDT') && symbol.status === 'TRADING');
         }
 
-        async function fetchKlines(symbol, interval, limit) {
-            try {
-                const response = await axios.get(`${KLINES_API_URL}?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-                return response.data;
-            } catch (error) {
-                console.error(`Error fetching klines for ${symbol}:`, error);
-                return [];
-            }
+        // Funzione per recuperare le candele (klines) da Binance
+        async function fetchKlines(symbol, timeframe, limit) {
+            const url = `https://api.binance.com/api/v1/klines?symbol=${symbol}&interval=${timeframe}&limit=${limit}`;
+            const response = await axios.get(url);
+            return response.data;
         }
 
-        function calculateEMA(data, period) {
-            const k = 2 / (period + 1);
-            let ema = [data[0]];
-            for (let i = 1; i < data.length; i++) {
-                ema.push(data[i] * k + ema[i - 1] * (1 - k));
+        // Funzione per calcolare l'EMA
+        function calculateEMA(prices, period) {
+            let k = 2 / (period + 1);
+            let ema = [prices[0]];  // Primo valore è la stessa apertura
+            for (let i = 1; i < prices.length; i++) {
+                ema.push(prices[i] * k + ema[i - 1] * (1 - k));
             }
             return ema;
         }
 
-        async function monitorMarkets() {
-            chartData.labels = [];
-            chartData.datasets[0].data = [];
-            
-            for (const symbol of symbols) {
+        // Funzione per calcolare la media dei volumi
+        function calculateAverageVolume(volumes) {
+            const totalVolume = volumes.reduce((acc, volume) => acc + volume, 0);
+            return totalVolume / volumes.length;
+        }
+
+        // Funzione per visualizzare i risultati in tabella
+        function displayResults(results) {
+            const tableBody = document.getElementById('resultsTable').getElementsByTagName('tbody')[0];
+            tableBody.innerHTML = "";  // Resetta la tabella prima di aggiungere i nuovi dati
+
+            results.forEach(result => {
+                const row = tableBody.insertRow();
+                row.insertCell(0).innerText = result.symbol;
+                row.insertCell(1).innerText = result.volume;
+                row.insertCell(2).innerText = result.condition;
+                row.insertCell(3).innerText = result.ema;
+            });
+        }
+
+        // Funzione principale che raccoglie e analizza i dati
+        async function analyzeMarket() {
+            emaPeriod = parseInt(document.getElementById('emaPeriod').value);  // Ottieni il periodo EMA dall'input
+            volumeMultiplier = parseFloat(document.getElementById('volumeMultiplier').value);  // Ottieni il moltiplicatore del volume
+            timeframe = document.getElementById('timeframe').value;  // Ottieni il timeframe selezionato
+
+            const symbolsData = await fetchSymbols();
+            const results = [];
+
+            // Per ogni simbolo, recuperiamo le candele, calcoliamo l'EMA e verifichiamo la condizione
+            for (let symbol of symbolsData) {
                 const klines = await fetchKlines(symbol.symbol, timeframe, emaPeriod + 1);
-                if (klines.length === 0) continue;
-
-                const closingPrices = klines.map(k => parseFloat(k[4]));
+                const closingPrices = klines.map(kline => parseFloat(kline[4]));  // Prezzo di chiusura
+                const volumes = klines.map(kline => parseFloat(kline[5]));  // Volume
+                const volume = volumes[volumes.length - 1];  // Ultimo volume tradato
+                
                 const ema = calculateEMA(closingPrices, emaPeriod);
+                const lastPrice = closingPrices[closingPrices.length - 1];
+                const lastEma = ema[ema.length - 1];
 
-                if (closingPrices[closingPrices.length - 1] > ema[ema.length - 1] && mode === "crossover") {
-                    chartData.labels.push(symbol.symbol);
-                    chartData.datasets[0].data.push(closingPrices[closingPrices.length - 1]);
-                } else if (closingPrices[closingPrices.length - 1] < ema[ema.length - 1] && mode === "crossunder") {
-                    chartData.labels.push(symbol.symbol);
-                    chartData.datasets[0].data.push(closingPrices[closingPrices.length - 1]);
+                // Calcoliamo la media dei volumi
+                const averageVolume = calculateAverageVolume(volumes);
+                
+                let condition = "";
+                if (lastPrice > lastEma && volume > averageVolume * volumeMultiplier) {
+                    condition = "Crossover";
+                    results.push({
+                        symbol: symbol.symbol,
+                        volume: volume,
+                        condition: condition,
+                        ema: lastEma.toFixed(2)
+                    });
+                } else if (lastPrice < lastEma && volume > averageVolume * volumeMultiplier) {
+                    condition = "Crossunder";
+                    results.push({
+                        symbol: symbol.symbol,
+                        volume: volume,
+                        condition: condition,
+                        ema: lastEma.toFixed(2)
+                    });
                 }
             }
 
-            // If no data, don't update the chart
-            if (chartData.labels.length === 0) {
-                console.log("No signals detected for the given configuration.");
-                return;
-            }
-
-            tradeChart.update();
+            // Visualizza i risultati
+            displayResults(results);
         }
 
-        async function updateConfig() {
-            emaPeriod = parseInt(document.getElementById('emaPeriod').value);
-            mode = document.getElementById('mode').value;
-            timeframe = document.getElementById('timeframe').value;
-            symbols = await fetchSymbols();
-            monitorMarkets();
-        }
+        // Aggiungere un intervallo di aggiornamento automatico ogni 60 secondi
+        setInterval(() => {
+            analyzeMarket();
+        }, 60000);  // Aggiorna ogni 60 secondi (1 minuto)
 
-        updateConfig(); // Initial load
-        setInterval(monitorMarkets, 10000); // Esegui ogni 10 secondi
+        // Esegui l'analisi subito dopo il caricamento della pagina
+        analyzeMarket();
+
+        // Aggiungere un listener per l'evento di cambiamento del timeframe
+        document.getElementById('timeframe').addEventListener('change', () => {
+            analyzeMarket();  // Aggiorna i risultati ogni volta che cambia il timeframe
+        });
     </script>
 </body>
 </html>
