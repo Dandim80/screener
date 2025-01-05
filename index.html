@@ -126,7 +126,7 @@
                 const lastTime = times[times.length - 1];  // Ultimo orario della candela
 
                 let condition = "";
-                if (lastPrice > lastEma) {
+                if (lastPrice > lastEma && closingPrices[closingPrices.length - 2] <= ema[ema.length - 2]) {
                     condition = "Crossover";
                     results.push({
                         symbol: symbol.symbol,
@@ -135,7 +135,7 @@
                         time: lastTime,
                         ema: lastEma.toFixed(2)
                     });
-                } else if (lastPrice < lastEma) {
+                } else if (lastPrice < lastEma && closingPrices[closingPrices.length - 2] >= ema[ema.length - 2]) {
                     condition = "Crossunder";
                     results.push({
                         symbol: symbol.symbol,
@@ -163,7 +163,7 @@
             }, intervalInMillis);
         }
 
-        // Funzione per ottenere il tempo in millisecondi per il timeframe selezionato
+                // Funzione per ottenere il tempo in millisecondi per il timeframe selezionato
         function getTimeframeInMillis(timeframe) {
             const timeframes = {
                 '1m': 60000,   // 1 minuto
@@ -176,20 +176,13 @@
             return timeframes[timeframe] || 3600000;  // Default a 1 ora se il timeframe non è valido
         }
 
-        // Aggiungere un listener per l'evento di cambiamento del timeframe
-        document.getElementById('timeframe').addEventListener('change', () => {
-            startTimedUpdate();  // Inizia l'analisi con il nuovo timeframe
-            analyzeMarket();     // Esegui subito l'analisi
-        });
-
-        // Aggiungere un listener per l'evento di cambiamento dell'EMA
-        document.getElementById('emaPeriod').addEventListener('input', () => {
-            analyzeMarket();  // Esegui subito l'analisi quando cambia l'EMA
-        });
-
-        // Inizia l'analisi iniziale e avvia l'aggiornamento periodico
-        startTimedUpdate();
-        analyzeMarket();  // Esegui subito l'analisi iniziale
+        // Avvio del processo di monitoraggio
+        window.onload = async () => {
+            // Recupera i simboli iniziali e avvia l'analisi
+            await fetchSymbols(); 
+            analyzeMarket();  // Avvia la prima analisi dei dati
+            startTimedUpdate();  // Avvia l'aggiornamento periodico delle condizioni
+        };
     </script>
 </body>
 </html>
