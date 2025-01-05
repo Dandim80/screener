@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitoraggio Crossovers EMA</title>
+    <title>Monitoraggio delle Coppie con Crossover/Crossunder EMA</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <style>
@@ -68,7 +68,9 @@
         let timeframe = '1h';  // Timeframe impostabile (di default 1 ora)
         let emaPeriod = 14;  // Periodo EMA (di default 14)
         let volumeMultiplier = 2;  // Moltiplicatore per il volume (di default 2)
-        
+        let lastUpdateTime = null;  // Variabile per tracciare l'ora dell'ultimo aggiornamento
+        let updateInterval = null;  // Intervallo di aggiornamento
+
         // Funzione per recuperare i simboli di mercato spot con USDT
         async function fetchSymbols() {
             const response = await axios.get('https://api.binance.com/api/v3/exchangeInfo');
@@ -158,22 +160,45 @@
                 }
             }
 
-            // Visualizza i risultati
+            // Visualizza i risultati, mostrando solo quelli che soddisfano la condizione
             displayResults(results);
         }
 
-        // Aggiungere un intervallo di aggiornamento automatico ogni 60 secondi
-        setInterval(() => {
-            analyzeMarket();
-        }, 60000);  // Aggiorna ogni 60 secondi (1 minuto)
+        // Funzione per avviare l'analisi alla scadenza del timeframe selezionato
+        function startTimedUpdate() {
+            const intervalInMillis = getTimeframeInMillis(timeframe);
+            if (updateInterval) {
+                clearInterval(updateInterval);  // Ferma l'intervallo precedente
+            }
 
-        // Esegui l'analisi subito dopo il caricamento della pagina
-        analyzeMarket();
+            updateInterval = setInterval(() => {
+                analyzeMarket();  // Aggiorna i dati ogni scadenza del timeframe
+            }, intervalInMillis);
+        }
+
+        // Funzione per ottenere il tempo in millisecondi per il timeframe selezionato
+        function getTimeframeInMillis(timeframe) {
+            const timeframes = {
+                '1m': 60000,   // 1 minuto
+                '5m': 300000,  // 5 minuti
+                '15m': 900000, // 15 minuti
+                '1h': 3600000, // 1 ora
+                '4h': 14400000, // 4 ore
+                '1d': 86400000, // 1 giorno
+            };
+            return timeframes[timeframe] || 3600000;  // Default a 1 ora se il timeframe non è valido
+        }
 
         // Aggiungere un listener per l'evento di cambiamento del timeframe
         document.getElementById('timeframe').addEventListener('change', () => {
-            analyzeMarket();  // Aggiorna i risultati ogni volta che cambia il timeframe
+            startTimedUpdate();  // Inizia l'analisi con il nuovo timeframe
+            analyzeMarket();     // Esegui subito l'analisi
         });
-    </script>
-</body>
-</html>
+
+        // Aggiungere un listener per l'evento di cambiamento dell'EMA
+        document.getElementById('emaPeriod').addEventListener('input', () => {
+            analyzeMarket();  // Esegui subito l'analisi quando cambia l'EMA
+        });
+
+        // Inizia l'analisi iniziale e avvia l'aggiornamento periodico
+        startTimedUpdate
