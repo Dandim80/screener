@@ -3,202 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitoraggio delle Coppie con Crossover/Crossunder EMA</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <title>Market Analysis</title>
     <style>
+        /* Aggiungi qualche stile base per la tua pagina */
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+        }
+        table, th, td {
+            border: 1px solid black;
         }
         th, td {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            text-align: center;
-        }
-        th {
-            background-color: #f2f2f2;
+            padding: 8px;
+            text-align: left;
         }
     </style>
 </head>
 <body>
-    <h1>Monitoraggio delle Coppie con Crossover/Crossunder EMA</h1>
+    <h1>Analisi di Mercato</h1>
 
-    <!-- Aggiungi i campi di input per personalizzare l'EMA -->
-    <div>
-        <label for="emaPeriod">Periodo EMA (Crossover/Crossunder): </label>
-        <input type="number" id="emaPeriod" value="60">
-    </div>
+    <label for="emaPeriod">Periodo EMA:</label>
+    <input type="number" id="emaPeriod" placeholder="Inserisci periodo EMA">
 
-    <div>
-        <label for="timeframe">Seleziona il Timeframe: </label>
-        <select id="timeframe">
-            <option value="1m">1 minuto</option>
-            <option value="5m">5 minuti</option>
-            <option value="15m">15 minuti</option>
-            <option value="1h">1 ora</option>
-            <option value="4h">4 ore</option>
-            <option value="1d">1 giorno</option>
-        </select>
-    </div>
-    
-    <!-- Tabella per visualizzare i risultati -->
-    <table id="resultsTable">
+    <label for="timeFrame">Time Frame:</label>
+    <input type="number" id="timeFrame" placeholder="Inserisci Time Frame">
+
+    <button id="startBtn">Inizia Analisi</button>
+
+    <table id="resultTable">
         <thead>
             <tr>
-                <th>Simbolo</th>
-                <th>Condizione</th>
-                <th>Prezzo al momento</th>
-                <th>Orario della condizione</th>
-                <th>EMA (Ultima)</th>
+                <th>Strumento</th>
+                <th>EMA</th>
+                <th>Price</th>
+                <th>Change</th>
+                <th>Altri Dati</th>
             </tr>
         </thead>
         <tbody>
-            <!-- I risultati verranno aggiunti qui -->
+            <!-- I risultati verranno inseriti qui -->
         </tbody>
     </table>
 
     <script>
-        let symbols = [];  // Iniziamo con un array vuoto per caricare i simboli dinamicamente
-        let timeframe = '1h';  // Timeframe impostabile (di default 1 ora)
-        let emaPeriod = 60;  // Periodo EMA (di default 14)
-        let lastUpdateTime = null;  // Variabile per tracciare l'ora dell'ultimo aggiornamento
-        let updateInterval = null;  // Intervallo di aggiornamento
-        let worker;
+        let lastFetch = 0;
+        const fetchInterval = 1000;  // 1 secondo tra le chiamate per ridurre la frequenza
 
-        // Funzione per recuperare i simboli di mercato spot con USDT
-        async function fetchSymbols() {
-            const response = await axios.get('https://api.binance.com/api/v3/exchangeInfo');
-            const symbolsData = response.data.symbols;
-            
-            // Filtro per trovare solo i simboli che sono spot e hanno la coppia USDT
-            return symbolsData.filter(symbol => symbol.symbol.endsWith('USDT') && symbol.status === 'TRADING');
+        // Funzione di debounce
+        function debounce(func, delay) {
+            let debounceTimer;
+            return function () {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    func.apply(this, arguments);
+                }, delay);
+            };
         }
 
-        // Funzione per recuperare le candele (klines) da Binance
-        async function fetchKlines(symbol, timeframe, limit) {
-            const url = `https://api.binance.com/api/v1/klines?symbol=${symbol}&interval=${timeframe}&limit=${limit}`;
-            const response = await axios.get(url);
-            return response.data;
-        }
-
-        // Funzione per calcolare l'EMA
-        function calculateEMA(prices, period) {
-            let k = 2 / (period + 1);
-            let ema = [prices[0]];  // Primo valore è la stessa apertura
-            for (let i = 1; i < prices.length; i++) {
-                ema.push(prices[i] * k + ema[i - 1] * (1 - k));
+        // Funzione di throttling per limitare la frequenza delle chiamate
+        function throttle(func, interval) {
+            const now = Date.now();
+            if (now - lastFetch < interval) {
+                return;  // Ignora la richiesta se è troppo presto
             }
-            return ema;
+            lastFetch = now;
+            func();
         }
 
-        // Funzione per visualizzare i risultati in tabella
-        function displayResults(results) {
-            const tableBody = document.getElementById('resultsTable').getElementsByTagName('tbody')[0];
-            tableBody.innerHTML = "";  // Resetta la tabella prima di aggiungere i nuovi dati
+        // Funzione per eseguire l'analisi di mercato
+        async function analyzeMarket() {
+            // Ottieni i valori dai campi
+            const emaPeriod = document.getElementById('emaPeriod').value;
+            const timeFrame = document.getElementById('timeFrame').value;
 
-            results.forEach(result => {
-                const row = tableBody.insertRow();
-                row.insertCell(0).innerText = result.symbol;
-                row.insertCell(1).innerText = result.condition;
-                row.insertCell(2).innerText = result.price;
-                row.insertCell(3).innerText = result.time;
-                row.insertCell(4).innerText = result.ema;
+            if (!emaPeriod || !timeFrame) {
+                alert('Inserisci tutti i dati richiesti!');
+                return;
+            }
+
+            // Fai la richiesta per ottenere i dati di mercato
+            const response = await fetch(`https://api.example.com/market-analysis?ema=${emaPeriod}&timeFrame=${timeFrame}`);
+            const data = await response.json();
+
+            // Aggiorna la tabella solo con i nuovi risultati
+            updateTable(data);
+        }
+
+        // Funzione per aggiornare la tabella con i nuovi risultati
+        function updateTable(data) {
+            const tableBody = document.querySelector('#resultTable tbody');
+
+            // Rimuovi le righe precedenti
+            tableBody.innerHTML = '';
+
+            // Aggiungi le nuove righe della tabella
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.strumento}</td>
+                    <td>${row.ema}</td>
+                    <td>${row.price}</td>
+                    <td>${row.change}</td>
+                    <td>${row.otherData}</td>
+                `;
+                tableBody.appendChild(tr);
             });
         }
 
-        // Funzione principale che raccoglie e analizza i dati
-        async function analyzeMarket() {
-            emaPeriod = parseInt(document.getElementById('emaPeriod').value);  // Ottieni il periodo EMA dall'input
-            timeframe = document.getElementById('timeframe').value;  // Ottieni il timeframe selezionato
+        // Aggiungi un listener per il pulsante "Inizia Analisi"
+        document.getElementById('startBtn').addEventListener('click', () => {
+            // Esegui l'analisi con throttling per evitare troppe chiamate
+            throttle(analyzeMarket, fetchInterval);
+        });
 
-            const symbolsData = await fetchSymbols();
-            const results = [];
+        // Aggiungi un listener per l'input dell'EMA con debounce
+        const emaInput = document.getElementById('emaPeriod');
+        emaInput.addEventListener('input', debounce(() => {
+            analyzeMarket();
+        }, 500));  // 500ms di ritardo
 
-            // Per ogni simbolo, recuperiamo le candele, calcoliamo l'EMA e verifichiamo la condizione
-            for (let symbol of symbolsData) {
-                const klines = await fetchKlines(symbol.symbol, timeframe, emaPeriod + 1);
-                const closingPrices = klines.map(kline => parseFloat(kline[4]));  // Prezzo di chiusura
-                const times = klines.map(kline => new Date(kline[0]).toLocaleString());  // Orario delle candele
-                const ema = calculateEMA(closingPrices, emaPeriod);
-                const lastPrice = closingPrices[closingPrices.length - 1];
-                const lastEma = ema[ema.length - 1];
-                const lastTime = times[times.length - 1];  // Ultimo orario della candela
-
-                let condition = "";
-                if (lastPrice > lastEma && closingPrices[closingPrices.length - 2] <= ema[ema.length - 2]) {
-                    condition = "Crossover";
-                    results.push({
-                        symbol: symbol.symbol,
-                        condition: condition,
-                        price: lastPrice.toFixed(2),
-                        time: lastTime,
-                        ema: lastEma.toFixed(2)
-                    });
-                } else if (lastPrice < lastEma && closingPrices[closingPrices.length - 2] >= ema[ema.length - 2]) {
-                    condition = "Crossunder";
-                    results.push({
-                        symbol: symbol.symbol,
-                        condition: condition,
-                        price: lastPrice.toFixed(2),
-                        time: lastTime,
-                        ema: lastEma.toFixed(2)
-                    });
-                }
-            }
-
-            // Visualizza i risultati, mostrando solo quelli che soddisfano la condizione
-            displayResults(results);
+        // Esegui il ciclo di aggiornamento in modo efficiente
+        function updateLoop() {
+            requestAnimationFrame(updateLoop);
+            // Esegui altre operazioni di aggiornamento necessarie
         }
 
-        // Funzione per avviare l'analisi alla scadenza del timeframe selezionato
-        function startTimedUpdate() {
-            const intervalInMillis = getTimeframeInMillis(timeframe);
-            if (updateInterval) {
-                clearInterval(updateInterval);  // Ferma l'intervallo precedente
-            }
-
-            updateInterval = setInterval(() => {
-                analyzeMarket();  // Aggiorna i dati ogni scadenza del timeframe
-            }, intervalInMillis);
-        }
-
-        // Funzione per ottenere il tempo in millisecondi per il timeframe selezionato
-        function getTimeframeInMillis(timeframe) {
-            const timeframes = {
-                '1m': 60000,   // 1 minuto
-                '5m': 300000,  // 5 minuti
-                '15m': 900000, // 15 minuti
-                '1h': 3600000, // 1 ora
-                '4h': 14400000, // 4 ore
-                '1d': 86400000, // 1 giorno
-            };
-            return timeframes[timeframe] || 3600000;  // Default a 1 ora se il timeframe non è valido
-        }
-
-        // Inizializzazione del Web Worker
-        function initWorker() {
-            if (typeof Worker !== "undefined") {
-                worker = new Worker("worker.js"); // Carica il file worker.js
-                worker.onmessage = function(e) {
-                    console.log("Messaggio ricevuto dal Worker: ", e.data);
-                    // Gestire i dati ricevuti dal worker e aggiornare la UI
-                    displayResults(e.data.results);
-                };
-            } else {
-                alert("I Web Workers non sono supportati nel tuo browser.");
-            }
-        }
-
-        // Avvio del processo di monitoraggio
-        window.onload = async () => {
-            // Recupera i simboli iniziali e avvia l'analisi
-            await fetchSymbols(); 
-            analyzeMarket();  // Avvia la prima analisi dei dati
-            startTimedUpdate();  // Avvia l'aggiornamento periodico delle condizioni
-            initWorker();  // Inizializza il Web Worker
-        };
+        // Avvia il ciclo di aggiornamento quando la pagina è pronta
+        requestAnimationFrame(updateLoop);
     </script>
 </body>
 </html>
