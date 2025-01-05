@@ -97,17 +97,29 @@
         async function monitorMarkets() {
             chartData.labels = [];
             chartData.datasets[0].data = [];
+            
             for (const symbol of symbols) {
                 const klines = await fetchKlines(symbol.symbol, timeframe, emaPeriod + 1);
+                if (klines.length === 0) continue;
+
                 const closingPrices = klines.map(k => parseFloat(k[4]));
                 const ema = calculateEMA(closingPrices, emaPeriod);
 
-                if ((mode === "crossover" && closingPrices[ema.length] > ema[ema.length - 1]) ||
-                    (mode === "crossunder" && closingPrices[ema.length] < ema[ema.length - 1])) {
+                if (closingPrices[closingPrices.length - 1] > ema[ema.length - 1] && mode === "crossover") {
                     chartData.labels.push(symbol.symbol);
-                    chartData.datasets[0].data.push(closingPrices[ema.length]);
+                    chartData.datasets[0].data.push(closingPrices[closingPrices.length - 1]);
+                } else if (closingPrices[closingPrices.length - 1] < ema[ema.length - 1] && mode === "crossunder") {
+                    chartData.labels.push(symbol.symbol);
+                    chartData.datasets[0].data.push(closingPrices[closingPrices.length - 1]);
                 }
             }
+
+            // If no data, don't update the chart
+            if (chartData.labels.length === 0) {
+                console.log("No signals detected for the given configuration.");
+                return;
+            }
+
             tradeChart.update();
         }
 
